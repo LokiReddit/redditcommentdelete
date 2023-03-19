@@ -1,0 +1,99 @@
+import praw
+from collections import Counter
+
+# Replace the placeholders with your own values
+client_id = 'YOUR_CLIENT_ID'
+client_secret = 'YOUR_CLIENT_SECRET'
+username = 'YOUR_REDDIT_USERNAME'
+password = 'YOUR_REDDIT_PASSWORD'
+
+reddit = praw.Reddit(
+    client_id=client_id,
+    client_secret=client_secret,
+    user_agent='Comment Deleter (by u/{})'.format(username),
+    username=username,
+    password=password,
+)
+
+def get_subreddits_with_comments():
+    comments = list(reddit.user.me().comments.new(limit=None))
+    subreddit_counter = Counter(comment.subreddit.display_name for comment in comments)
+    return sorted(subreddit_counter.items(), key=lambda x: x[1], reverse=True)
+
+def delete_comments_in_subreddit(subreddit_name):
+    comments = list(reddit.user.me().comments.new(limit=None))
+    filtered_comments = [comment for comment in comments if comment.subreddit.display_name == subreddit_name]
+    sorted_comments = sorted(filtered_comments, key=lambda c: c.score, reverse=True)
+
+    if len(sorted_comments) < 10:
+        decision = input(f"There are {len(sorted_comments)} comments in this subreddit. Delete all? (y/n): ")
+        if decision.lower() == 'y':
+            print("These are the comments that will be deleted:")
+            for comment in sorted_comments:
+                print("\nComment:", comment.body)
+                print("Karma:", comment.score)
+            
+            confirm = input("Confirm deleting all comments? (y/n): ")
+            if confirm.lower() == 'y':
+                for comment in sorted_comments:
+                    print("Deleting comment.")
+                    comment.delete()
+                return True
+            else:
+                print("Canceled deleting all comments.")
+
+    index = 0
+    prev_decision = None
+    prev_index = None
+    restart = False
+
+    while index < len(sorted_comments):
+        comment = sorted_comments[index]
+        print("\nComment:", comment.body)
+        print("Karma:", comment.score)
+        decision = input("Do you want to delete this comment? (y/n) or go back (b), restart (r), or quit (q): ")
+
+        if decision.lower() == 'y':
+            print("Deleting comment.")
+            comment.delete()
+            index += 1
+        elif decision.lower() == 'n':
+            prev_decision = 'n'
+            prev_index = index
+            index += 1
+        elif decision.lower() == 'b':
+            if prev_decision == 'n' and prev_index is not None:
+                index = prev_index
+            else:
+                print("Can't go back further.")
+        elif decision.lower() == 'r':
+            restart = True
+            break
+        elif decision.lower() == 'q':
+            return False
+        else:
+            print("Invalid input.")
+        print()
+
+    if not restart:
+        decision = input("Finished reviewing all comments. Restart (r) or quit (q): ")
+        restart = decision.lower() == 'r'
+
+    return restart
+
+if __name__ == '__main__':
+    while True:
+        subreddits_with_counts = get_subreddits_with_comments()
+        print("Subreddits you've commented in:")
+        total_comments = 0
+        for i, (subreddit, count) in enumerate(subreddits_with_counts):
+            print(f"{i + 1}. {subreddit} ({count} comments)")
+            total_comments += count
+        print(f"Total comments: {total_comments}")
+
+        choice = int(input("Enter the number of the subreddit you want to review: "))
+        selected_subreddit, _ = subreddits_with_counts[choice - 1]
+
+        restart = delete_comments_in_subreddit(selected_subreddit)
+        if not restart:
+            break
